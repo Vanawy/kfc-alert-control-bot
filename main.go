@@ -25,20 +25,7 @@ func main() {
 		return
 	}
 
-	var commands = make([]tb.Command, 0)
-
-	for name, command := range getCommandList() {
-		log.Printf("Command /%s registered", name)
-		var f, description = command(b)
-		commands = append(commands, tb.Command{Text: name, Description: description})
-		b.Handle("/"+name, f)
-	}
-
-	err = b.SetCommands(commands)
-	if err != nil {
-		log.Println("WARNING: Cant update list of commands:")
-		log.Println(err)
-	}
+	registerCommandHandlers(b)
 
 	b.Start()
 }
