@@ -3,8 +3,8 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
-	"regexp"
 	"strings"
 	"time"
 
@@ -16,6 +16,14 @@ type Command struct {
 	Desc      string
 	AdminOnly bool
 }
+
+const (
+	P_NAME   = 1 + 1
+	P_UPTIME = 6 + 1
+	P_STATUS = 8 + 1
+	P_CPU    = 9 + 1
+	P_MEM    = 10 + 1
+)
 
 func getCommandList() map[string]Command {
 
@@ -55,58 +63,32 @@ func couponsDate(b *tb.Bot, m *tb.Message) {
 }
 
 func pm2status(b *tb.Bot, m *tb.Message) {
-	var cmd = exec.Command("pm2", "status")
-	out, err := cmd.Output()
+	var pm2status = exec.Command("pm2", "status")
+	pipe, _ := pm2status.StdoutPipe()
+
+	var grep = exec.Command("grep", os.Getenv("BOT_PROCESS_NAME"))
+	grep.Stdin = pipe
+
+	pm2status.Start()
+	out, err := grep.Output()
 	if err != nil {
 		log.Println(err)
 		b.Send(m.Sender, fmt.Sprintf("Error: %v", err))
 	}
 
-	rows := strings.Split(string(out), "\n")
-
-	var title []string
-	var processes [][]string
-
-	for i, row := range rows {
-		fields := strings.Split(row, "│")
-		if len(fields) <= 1 {
-			continue
-		}
-		var processInfo []string
-		addProcessInfo := false
-		for _, field := range fields {
-			if i == 1 {
-				title = append(title, strings.TrimSpace(field))
-			} else {
-				processInfo = append(processInfo, strings.TrimSpace(field))
-				addProcessInfo = true
-			}
-		}
-		if addProcessInfo {
-			processes = append(processes, processInfo)
-		}
+	data := strings.Split(string(out), "│")
+	if len(data) < 10 {
+		b.Send(m.Sender, "Something went wrong")
 	}
 
-	pattern, _ := regexp.Compile("^(id|name|version|uptime|cpu|mem|status)$")
-
-	var result string
-
-	for i, f := range title {
-		match := pattern.MatchString(f)
-		if match {
-			pInfo := ""
-			for _, p := range processes {
-				pInfo += p[i] + " "
-			}
-			result = result + fmt.Sprintf("%s | %s\n", f, pInfo)
-		}
-	}
+	var result string = fmt.Sprintf("Mem: %s\nCPU: %s\nUptime: %s\nStatus: %s",
+		data[P_MEM], data[P_CPU], data[P_UPTIME], data[P_STATUS])
 
 	b.Send(m.Sender, result)
 }
 
 func logs(b *tb.Bot, m *tb.Message) {
-	var cmd = exec.Command("tail", "/home/vanawy/.pm2/logs/test-out.log")
+	var cmd = exec.Command("tail", os.Getenv("LOGS_LOCATION"))
 	out, err := cmd.Output()
 	if err != nil {
 		log.Println(err)
