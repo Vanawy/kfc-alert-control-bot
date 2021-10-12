@@ -25,6 +25,8 @@ const (
 	P_MEM    = 10 + 1
 )
 
+const LOGS_POLL_TIME = 3
+
 func getCommandList() map[string]Command {
 
 	var commands = make(map[string]Command)
@@ -87,13 +89,54 @@ func pm2status(b *tb.Bot, m *tb.Message) {
 	b.Send(m.Sender, result)
 }
 
-func logs(b *tb.Bot, m *tb.Message) {
+var updatingLogs bool = false
+var stopUpdating chan bool
+var logsMessage *tb.Message
+
+func getLogs() ([]byte, error) {
 	var cmd = exec.Command("tail", os.Getenv("LOGS_LOCATION"))
-	out, err := cmd.Output()
+	return cmd.Output()
+}
+
+func updateLogsMessage(b *tb.Bot) {
+	for {
+		time.Sleep(time.Second * LOGS_POLL_TIME)
+		select {
+		case <-stopUpdating:
+			return
+		default:
+			log.Println("Updating logs")
+			out, err := getLogs()
+			if err != nil {
+				log.Println(err)
+				b.Send(logsMessage.Sender, fmt.Sprintf("Error: %v", err))
+			}
+			_, err = b.Edit(logsMessage, string(out))
+			if err != nil {
+				log.Println(err)
+			}
+		}
+	}
+}
+
+func logs(b *tb.Bot, m *tb.Message) {
+	if updatingLogs {
+		updatingLogs = false
+		stopUpdating <- true
+		log.Println("Stopping")
+		b.Edit(logsMessage, logsMessage.Text+"\nStopped...")
+		return
+	}
+	out, err := getLogs()
 	if err != nil {
 		log.Println(err)
 		b.Send(m.Sender, fmt.Sprintf("Error: %v", err))
 	}
 
-	b.Send(m.Sender, string(out))
+	logsMessage, err = b.Send(m.Sender, string(out))
+	if err != nil {
+		log.Println(err)
+	}
+	updatingLogs = true
+	go updateLogsMessage(b)
 }
